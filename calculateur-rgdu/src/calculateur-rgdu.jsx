@@ -66,50 +66,48 @@ const CalculateurRGDU = () => {
 
   // Exporter vers Excel
   const exporterVersExcel = () => {
-    // Préparer les données pour l'export
+    // Préparer les données pour l'export (correspondant exactement aux calculs affichés)
     const donneesExport = donneesCalculees.map(d => ({
       'Mois': d.mois,
-      'Salaire brut (€)': d.salaireBrut.toFixed(2),
-      'SMIC mensuel (€)': d.smicMois.toFixed(2),
-      'Heures mensuelles': d.heuresMois.toFixed(2),
-      'SMIC proratisé (€)': d.smicProratise.toFixed(2),
-      '% temps': d.pourcentageTemps.toFixed(2) + '%',
-      'Cumul salaire (€)': d.salaireCumule.toFixed(2),
-      'Cumul SMIC (€)': d.smicCumule.toFixed(2),
-      'Coefficient': d.coefficient.toFixed(4),
-      'Taux mois (%)': d.tauxReduction.toFixed(2),
-      'Réduction mois (€)': d.reductionMensuelle.toFixed(2),
-      'Cumul réduction (€)': d.reductionCumulative.toFixed(2),
-      'Coût avant réduction (€)': d.coutAvantReduction.toFixed(2),
-      'Coût après réduction (€)': d.coutApresReduction.toFixed(2)
+      'Salaire brut (€)': d.salaireBrut,
+      'SMIC mensuel (€)': d.smicMois,
+      'Heures mensuelles': d.heuresMois,
+      'SMIC proratisé (€)': d.smicProratise,
+      '% temps': d.pourcentageTemps,
+      'Cumul salaire (€)': d.salaireCumule,
+      'Cumul SMIC (€)': d.smicCumule,
+      'Ratio': d.ratio,
+      'Coefficient': d.coefficient,
+      'Taux mois (%)': d.tauxReduction,
+      'Réduction mois (€)': d.reductionMensuelle,
+      'Cumul réduction (€)': d.reductionCumulative
     }));
 
     // Ajouter une ligne de totaux
     donneesExport.push({
       'Mois': 'TOTAL',
-      'Salaire brut (€)': totaux.salaireAnnuel.toFixed(2),
+      'Salaire brut (€)': totaux.salaireAnnuel,
       'SMIC mensuel (€)': '',
       'Heures mensuelles': '',
       'SMIC proratisé (€)': '',
       '% temps': '',
       'Cumul salaire (€)': '',
       'Cumul SMIC (€)': '',
+      'Ratio': '',
       'Coefficient': '',
-      'Taux mois (%)': totaux.tauxMoyen.toFixed(2),
+      'Taux mois (%)': totaux.tauxMoyen,
       'Réduction mois (€)': '',
-      'Cumul réduction (€)': totaux.reductionAnnuelle.toFixed(2),
-      'Coût avant réduction (€)': totaux.coutAvant.toFixed(2),
-      'Coût après réduction (€)': totaux.coutApres.toFixed(2)
+      'Cumul réduction (€)': totaux.reductionAnnuelle
     });
 
-    // Créer une feuille de calcul
+    // Créer la feuille de calcul principale
     const ws = XLSX.utils.json_to_sheet(donneesExport);
     
     // Créer un classeur
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'RGDU 2026');
+    XLSX.utils.book_append_sheet(wb, ws, 'Calculs mensuels');
 
-    // Ajouter une deuxième feuille avec les paramètres
+    // Ajouter une feuille avec les paramètres
     const parametres = [
       { 'Paramètre': 'Effectif entreprise', 'Valeur': effectif },
       { 'Paramètre': 'FNAL', 'Valeur': effectif < 50 ? '0,10%' : '0,50%' },
@@ -117,10 +115,61 @@ const CalculateurRGDU = () => {
       { 'Paramètre': 'Tdelta', 'Valeur': tdelta },
       { 'Paramètre': 'Coefficient max', 'Valeur': coeffMax },
       { 'Paramètre': 'Puissance (P)', 'Valeur': puissance },
-      { 'Paramètre': 'SMIC mensuel base', 'Valeur': smicMensuelBase + ' €' }
+      { 'Paramètre': 'SMIC mensuel base', 'Valeur': smicMensuelBase },
+      { 'Paramètre': 'Mode arrondi 4 décimales', 'Valeur': modeArrondi ? 'OUI' : 'NON' },
+      { 'Paramètre': '', 'Valeur': '' },
+      { 'Paramètre': 'Formule', 'Valeur': `C = Tmin + (Tdelta × [(1/2) × ((3 × SMIC cumulé / Rémunération cumulée) - 1)]^P)` }
     ];
     const wsParams = XLSX.utils.json_to_sheet(parametres);
     XLSX.utils.book_append_sheet(wb, wsParams, 'Paramètres');
+
+    // Ajouter une feuille de vérification détaillée pour chaque mois
+    const verificationData = donneesCalculees.map((d, index) => {
+      const ratio = d.ratio;
+      const partieInterieure = (1/2) * (ratio - 1);
+      const puissanceResult = Math.pow(partieInterieure, puissance);
+      const tdeltaPart = tdelta * puissanceResult;
+      const coeffFinal = d.coefficient;
+      const reductionCalculee = d.salaireBrut * coeffFinal;
+
+      return {
+        'Mois': d.mois,
+        'sep1': '',
+        'Étape 1 - Ratio': `3 × ${d.smicCumule} / ${d.salaireCumule}`,
+        'Ratio calculé': ratio,
+        'sep2': '',
+        'Étape 2 - Partie intérieure': `(1/2) × (${ratio} - 1)`,
+        'Partie intérieure': partieInterieure,
+        'sep3': '',
+        'Étape 3 - Puissance': `${partieInterieure}^${puissance}`,
+        'Résultat puissance': puissanceResult,
+        'sep4': '',
+        'Étape 4 - × Tdelta': `${tdelta} × ${puissanceResult}`,
+        'Tdelta × puissance': tdeltaPart,
+        'sep5': '',
+        'Étape 5 - + Tmin': `${tmin} + ${tdeltaPart}`,
+        'Coefficient final': coeffFinal,
+        'sep6': '',
+        'Étape 6 - Réduction': `${d.salaireBrut} × ${coeffFinal}`,
+        'Réduction du mois': reductionCalculee
+      };
+    });
+    
+    const wsVerif = XLSX.utils.json_to_sheet(verificationData);
+    XLSX.utils.book_append_sheet(wb, wsVerif, 'Vérification détaillée');
+
+    // Ajouter une feuille des totaux et coûts
+    const totauxData = [
+      { 'Indicateur': 'Salaire annuel total', 'Valeur': totaux.salaireAnnuel },
+      { 'Indicateur': 'Réduction annuelle', 'Valeur': totaux.reductionAnnuelle },
+      { 'Indicateur': 'Taux moyen de réduction', 'Valeur': totaux.tauxMoyen + '%' },
+      { 'Indicateur': '', 'Valeur': '' },
+      { 'Indicateur': 'Coût total avant réduction (estimation)', 'Valeur': totaux.coutAvant },
+      { 'Indicateur': 'Coût total après réduction', 'Valeur': totaux.coutApres },
+      { 'Indicateur': 'Économie totale', 'Valeur': totaux.economie }
+    ];
+    const wsTotaux = XLSX.utils.json_to_sheet(totauxData);
+    XLSX.utils.book_append_sheet(wb, wsTotaux, 'Chiffres clés');
 
     // Télécharger le fichier
     const date = new Date().toISOString().split('T')[0];
@@ -649,7 +698,7 @@ const CalculateurRGDU = () => {
         {/* Chiffres Clés */}
         <div className="card-premium rounded-2xl p-6 mt-8 animate-fade-in" style={{animationDelay: '0.3s'}}>
           <h2 className="text-2xl font-semibold mb-4 text-yellow-400">Chiffres Clés</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
               <p className="text-slate-400 text-xs mb-1">Salaire annuel total</p>
               <p className="text-2xl font-bold text-white">{totaux.salaireAnnuel.toFixed(2)} €</p>
@@ -823,6 +872,7 @@ const CalculateurRGDU = () => {
                     border: '1px solid rgba(234, 179, 8, 0.3)',
                     borderRadius: '8px'
                   }}
+                  formatter={(value) => `${parseFloat(value).toFixed(2)} €`}
                 />
                 <Legend />
                 <Line 
@@ -876,6 +926,84 @@ const CalculateurRGDU = () => {
           {/* Graphique: Comparaison coût avant/après */}
           <div className="card-premium rounded-2xl p-8 lg:col-span-2">
             <h3 className="text-2xl font-semibold mb-6 text-yellow-400">Coût employeur : avant et après réduction</h3>
+            
+            {/* Texte explicatif */}
+            <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-4 mb-6 text-sm">
+              <p className="text-blue-300 font-semibold mb-2">💡 Comprendre le coût employeur</p>
+              <p className="text-slate-300 mb-3">
+                Le coût total pour l'entreprise comprend le <span className="text-white font-semibold">salaire brut</span> versé au salarié 
+                + les <span className="text-white font-semibold">charges patronales</span> (estimation ~45% du brut).
+              </p>
+              
+              {donneesCalculees.length > 0 && (() => {
+                // Trouver un mois avec valeur utilisable (préférence: salaire > 0 et heures >= 120)
+                let exemple = donneesCalculees.find(d => d.salaireBrut > 0 && d.heuresMois >= 120);
+                // Si aucun mois avec 120h+, prendre le premier avec salaire > 0
+                if (!exemple) {
+                  exemple = donneesCalculees.find(d => d.salaireBrut > 0);
+                }
+                // Si toujours rien, prendre janvier par défaut
+                if (!exemple) {
+                  exemple = donneesCalculees[0];
+                }
+                
+                const salaireBrut = exemple.salaireBrut;
+                const chargesPatronales = salaireBrut * 0.45;
+                const coutTotal = salaireBrut + chargesPatronales;
+                const reductionRGDU = exemple.reductionMensuelle;
+                const coutFinal = coutTotal - reductionRGDU;
+                const salaireNet = salaireBrut * 0.77; // Estimation salaire net (~23% de cotisations salariales)
+                
+                return (
+                  <div className="text-xs">
+                    <p className="text-yellow-400 font-semibold mb-2">📊 Exemple pour {exemple.mois} :</p>
+                    <div className="grid grid-cols-3 gap-4">
+                      {/* Colonne 1: Salaires */}
+                      <div className="bg-slate-800/50 rounded p-3 space-y-2">
+                        <div>
+                          <p className="text-slate-400">Salaire brut :</p>
+                          <p className="text-white font-mono font-semibold">{salaireBrut.toFixed(2)} €</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-400">Salaire net ≈ :</p>
+                          <p className="text-green-400 font-mono">{salaireNet.toFixed(2)} €</p>
+                        </div>
+                      </div>
+                      
+                      {/* Colonne 2: Avant RGDU */}
+                      <div className="bg-slate-800/50 rounded p-3 space-y-2">
+                        <div>
+                          <p className="text-slate-400">Charges patronales :</p>
+                          <p className="text-white font-mono">+ {chargesPatronales.toFixed(2)} €</p>
+                        </div>
+                        <div className="pt-1 border-t border-slate-600">
+                          <p className="text-slate-400">Coût AVANT RGDU :</p>
+                          <p className="text-red-400 font-mono font-semibold">{coutTotal.toFixed(2)} €</p>
+                        </div>
+                      </div>
+                      
+                      {/* Colonne 3: Après RGDU */}
+                      <div className="bg-slate-800/50 rounded p-3 space-y-2">
+                        <div>
+                          <p className="text-slate-400">Réduction RGDU :</p>
+                          <p className="text-green-400 font-mono">- {reductionRGDU.toFixed(2)} €</p>
+                        </div>
+                        <div className="pt-1 border-t border-slate-600">
+                          <p className="text-slate-400">Coût APRÈS RGDU :</p>
+                          <p className="text-green-400 font-mono font-semibold">{coutFinal.toFixed(2)} €</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              
+              <p className="text-slate-400 text-xs mt-3">
+                <span className="text-yellow-400">⚠️ Note :</span> Le taux de charges patronales de 45% est une estimation moyenne. 
+                Le taux réel varie selon la taille de l'entreprise, le secteur d'activité et le statut du salarié (entre 40% et 50%).
+              </p>
+            </div>
+            
             <ResponsiveContainer width="100%" height={350}>
               <BarChart data={donneesCalculees}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" />
@@ -887,6 +1015,7 @@ const CalculateurRGDU = () => {
                     border: '1px solid rgba(234, 179, 8, 0.3)',
                     borderRadius: '8px'
                   }}
+                  formatter={(value) => `${parseFloat(value).toFixed(2)} €`}
                 />
                 <Legend />
                 <Bar 
@@ -904,7 +1033,7 @@ const CalculateurRGDU = () => {
               </BarChart>
             </ResponsiveContainer>
             
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="mt-6 grid grid-cols-3 gap-4">
               <div className="stat-card p-4 rounded-lg">
                 <p className="text-sm text-slate-300 mb-1">Coût total avant réduction</p>
                 <p className="text-2xl font-bold text-red-400">{totaux.coutAvant.toFixed(2)} €</p>
