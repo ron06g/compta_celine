@@ -665,7 +665,7 @@ const CalculateurRGDU = () => {
             </div>
           </div>
         </div>
-          </>
+          </div>
         )}
 
         {/* Onglet: Vérification */}
